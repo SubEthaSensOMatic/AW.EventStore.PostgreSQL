@@ -3,7 +3,6 @@ using AW.Identifiers;
 using AW.NamedTypes;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using System.Reflection.Metadata;
 
 namespace DemoApp;
 
@@ -32,7 +31,7 @@ internal class Program
 
         var logger = loggerFactory.CreateLogger<Program>();
 
-        await using var dataSource = 
+        await using var dataSource =
             new NpgsqlDataSourceBuilder(
                 "Host=localhost;Username=postgres;Password=postgres;Database=postgres")
             .Build();
@@ -70,7 +69,7 @@ internal class Program
                 snapshot = snapshot with { Id = pce.Id, Name = pce.Name, EMail = pce.EMail };
             else if (@event.EventPayload is PersonEMailChangedEvent pec)
                 snapshot = snapshot with { EMail = pec.EMail };
-            
+
             logger.LogInformation("Event: {@event}", @event);
         }
 
@@ -81,5 +80,11 @@ internal class Program
         var loadedSnapshot = await store.LoadSnapshot(personId.ToString());
 
         logger.LogInformation("Snapshot after load: {loadedSnapshot}", loadedSnapshot);
+
+        var allEvents = await store.StreamEvents(null, 1000, CancellationToken.None);
+        foreach (var @event in allEvents)
+        {
+            logger.LogInformation("Event: {@event}", @event);
+        }
     }
 }
