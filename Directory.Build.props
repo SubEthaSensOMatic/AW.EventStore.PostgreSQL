@@ -1,0 +1,11 @@
+<Project>
+	<PropertyGroup>
+		<Version>1.0.0</Version>
+		<TargetFramework>net8.0</TargetFramework>
+		<RepositoryType>git</RepositoryType>
+		<RepositoryUrl>https://github.com/SubEthaSensOMatic/AW.EventStore.PostgreSQL.git</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/SubEthaSensOMatic/AW.EventStore.PostgreSQL</PackageProjectUrl>
+		<PackageTags>event-sourcing;microservices;event-stream;event-store;dotnet;csharp;cqrs</PackageTags>
+		<Company>Ajid Welzel</Company>
+	</PropertyGroup>
+</Project>
