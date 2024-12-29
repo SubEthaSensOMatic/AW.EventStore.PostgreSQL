@@ -1,4 +1,6 @@
-﻿using AW.EventStore.PostgreSQL;
+﻿using AW.EventStore.Notifications;
+using AW.EventStore.PostgreSQL;
+using AW.EventStore.Serialization;
 using AW.Identifiers;
 using AW.NamedTypes;
 using Microsoft.Extensions.Logging;
@@ -37,17 +39,17 @@ internal class Program
             .Build();
 
         var provider = new SimpleDataSourceProvider(dataSource);
-
         var config = new StoreConfiguration();
-
-        var notification = new InProcessNotification();
+        var notification = new DefaultEventStoreNotification();
+        var payloadSerializer = new DefaultEventPayloadSerializer();
+        var snapshotSerializer = new DefaultSnapshotSerializer();
 
         var init = new EventStoreInitializer(
             loggerFactory.CreateLogger<EventStoreInitializer>(), config, provider);
 
         await init.Initialize(CancellationToken.None);
 
-        var store = new EventStore(provider, config, notification);
+        var store = new EventStore(config, provider, notification, payloadSerializer, snapshotSerializer);
 
         var personId = Urn.CreateFromFlake(
             FlakeFactory.Instance.NewFlake(), ["aw", "demo", Person.PERSON_TYPE]);

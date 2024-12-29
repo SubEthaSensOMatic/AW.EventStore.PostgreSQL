@@ -1,13 +1,9 @@
-﻿using Npgsql;
-using NpgsqlTypes;
+﻿using NpgsqlTypes;
 using System.Collections.Generic;
 using System;
-using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Linq;
-using AW.NamedTypes;
-using AW.EventStore.PostrgreSQL;
 
 namespace AW.EventStore.PostgreSQL;
 
@@ -16,15 +12,21 @@ public class EventStore : IEventStore
     private readonly IEventStoreDataSourceProvider _dataSourceProvider;
     private readonly StoreConfiguration _configuration;
     private readonly IEventStoreNotifications _eventStoreNotifications;
+    private readonly IEventPayloadSerializer _eventPayloadSerializer;
+    private readonly ISnapshotSerializer _snapshotSerializer;
 
     public EventStore(
-        IEventStoreDataSourceProvider dataSourceProvider,
         StoreConfiguration configuration,
-        IEventStoreNotifications eventStoreNotifications)
+        IEventStoreDataSourceProvider dataSourceProvider,
+        IEventStoreNotifications eventStoreNotifications,
+        IEventPayloadSerializer eventPayloadSerializer,
+        ISnapshotSerializer snapshotSerializer)
     {
         ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
         ArgumentNullException.ThrowIfNull(dataSourceProvider, nameof(dataSourceProvider));
         ArgumentNullException.ThrowIfNull(eventStoreNotifications, nameof(eventStoreNotifications));
+        ArgumentNullException.ThrowIfNull(eventPayloadSerializer, nameof(eventPayloadSerializer));
+        ArgumentNullException.ThrowIfNull(snapshotSerializer, nameof(snapshotSerializer));
 
         if (string.IsNullOrWhiteSpace(configuration.Schema))
             throw new InvalidOperationException("No database schema for postgresql event store defined.");
@@ -32,6 +34,8 @@ public class EventStore : IEventStore
         _dataSourceProvider = dataSourceProvider;
         _configuration = configuration;
         _eventStoreNotifications = eventStoreNotifications;
+        _eventPayloadSerializer = eventPayloadSerializer;
+        _snapshotSerializer = snapshotSerializer;
     }
 
     public async Task CreateStream(
@@ -42,7 +46,7 @@ public class EventStore : IEventStore
         ArgumentException.ThrowIfNullOrWhiteSpace(streamType, nameof(streamType));
         ArgumentNullException.ThrowIfNull(eventPayloads, nameof(eventPayloads));
 
-        var parameterPayloads = new string[eventPayloads.Count()];
+        var parameterPayloads = new byte[eventPayloads.Count()][];
         var parameterEventTypes = new string[parameterPayloads.Length];
         var parameterVersions = new int[parameterPayloads.Length];
 
@@ -50,12 +54,9 @@ public class EventStore : IEventStore
         for (var i = 0; i < parameterPayloads.Length; i++)
         {
             payloadEnumerator.MoveNext();
-            var eventPayload = payloadEnumerator.Current;
+            var (eventName, payload) = _eventPayloadSerializer.Serialize(payloadEnumerator.Current);
 
-            if (TypeRegistry.Instance.TryResolveName(eventPayload.GetType(), out var eventName) == false || eventName == null)
-                throw new InvalidOperationException($"Event type '{eventPayload.GetType()}' is not mapped.");
-
-            parameterPayloads[i] = JsonSerializer.Serialize(eventPayload);
+            parameterPayloads[i] = payload ?? [];
             parameterEventTypes[i] = eventName;
             parameterVersions[i] = i + 1;
         }
@@ -70,7 +71,7 @@ public class EventStore : IEventStore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamType);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Integer | NpgsqlDbType.Array, parameterVersions);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text | NpgsqlDbType.Array, parameterEventTypes);
-        cmd.Parameters.AddWithValue(NpgsqlDbType.Text | NpgsqlDbType.Array, parameterPayloads);
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bytea | NpgsqlDbType.Array, parameterPayloads);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, correlationId ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, causationId ?? (object)DBNull.Value);
 
@@ -87,7 +88,7 @@ public class EventStore : IEventStore
         ArgumentOutOfRangeException.ThrowIfLessThan(expectedStreamVersion, 1, nameof(expectedStreamVersion));
         ArgumentNullException.ThrowIfNull(eventPayloads, nameof(eventPayloads));
 
-        var parameterPayloads = new string[eventPayloads.Count()];
+        var parameterPayloads = new byte[eventPayloads.Count()][];
         var parameterEventTypes = new string[parameterPayloads.Length];
         var parameterVersions = new int[parameterPayloads.Length];
 
@@ -95,12 +96,9 @@ public class EventStore : IEventStore
         for (var i = 0; i < parameterPayloads.Length; i++)
         {
             payloadEnumerator.MoveNext();
-            var eventPayload = payloadEnumerator.Current;
+            var (eventName, payload) = _eventPayloadSerializer.Serialize(payloadEnumerator.Current);
 
-            if (TypeRegistry.Instance.TryResolveName(eventPayload.GetType(), out var eventName) == false || eventName == null)
-                throw new InvalidOperationException($"Event type '{eventPayload.GetType()}' is not mapped.");
-
-            parameterPayloads[i] = JsonSerializer.Serialize(eventPayload);
+            parameterPayloads[i] = payload ?? [];
             parameterEventTypes[i] = eventName;
             parameterVersions[i] = i + expectedStreamVersion + 1;
         }
@@ -114,7 +112,7 @@ public class EventStore : IEventStore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamId);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Integer | NpgsqlDbType.Array, parameterVersions);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text | NpgsqlDbType.Array, parameterEventTypes);
-        cmd.Parameters.AddWithValue(NpgsqlDbType.Text | NpgsqlDbType.Array, parameterPayloads);
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bytea | NpgsqlDbType.Array, parameterPayloads);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, correlationId ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, causationId ?? (object)DBNull.Value);
 
@@ -153,16 +151,11 @@ public class EventStore : IEventStore
                 break;
 
             var eventName = reader.GetString(0);
-
-            if (TypeRegistry.Instance.TryResolveType(eventName, out var eventType) == false || eventType == null)
-                throw new InvalidOperationException($"Event '{eventName}' is not mapped.");
-
             var eventId = reader.GetInt64(1);
-            var payloadJson = reader.GetString(2);
-            var payload = JsonSerializer.Deserialize(payloadJson, eventType);
-
-            if (payload == null)
-                throw new InvalidOperationException($"Payload of event '{eventId}' is null.");
+            var payloadData = reader.GetFieldValue<byte[]>(2);
+            
+            var payload = _eventPayloadSerializer.Deserialize(eventName, payloadData)
+                ?? throw new InvalidOperationException($"Payload of event '{eventId}' is null.");
 
             var createdAt = reader.GetDateTime(3);
             var createdBy = reader.GetString(4);
@@ -216,17 +209,12 @@ public class EventStore : IEventStore
                 break;
 
             var eventName = reader.GetString(0);
-
-            if (TypeRegistry.Instance.TryResolveType(eventName, out var eventType) == false || eventType == null)
-                throw new InvalidOperationException($"Event '{eventName}' is not mapped.");
-
-            var eventId = (long)reader.GetValue(1);
-            var payloadJson = reader.GetString(2);
-
-            var payload = JsonSerializer.Deserialize(payloadJson, eventType);
-            if (payload == null)
-                throw new InvalidOperationException($"Payload of event '{eventId}' is null.");
-
+            var eventId = reader.GetInt64(1);
+            var payloadData = reader.GetFieldValue<byte[]>(2);
+            
+            var payload = _eventPayloadSerializer.Deserialize(eventName, payloadData)
+                ?? throw new InvalidOperationException($"Payload of event '{eventId}' is null.");
+            
             var createdAt = reader.GetDateTime(3);
             var createdBy = reader.GetString(4);
             var streamid = reader.GetString(5);
@@ -250,10 +238,7 @@ public class EventStore : IEventStore
         ArgumentOutOfRangeException.ThrowIfLessThan(streamVersion, 1, nameof(streamVersion));
         ArgumentNullException.ThrowIfNull(state, nameof(state));
 
-        if (TypeRegistry.Instance.TryResolveName(state.GetType(), out var snapshotName) == false || snapshotName == null)
-            throw new InvalidOperationException($"Snapshot type '{state.GetType()}' is not mapped.");
-
-        var snapshot = JsonSerializer.Serialize(state);
+        var (snapshotName, snapshot) = _snapshotSerializer.Serialize(state);
 
         var dataSource = await _dataSourceProvider.GetDataSource();
 
@@ -263,7 +248,7 @@ public class EventStore : IEventStore
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamId);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Integer, streamVersion);
         cmd.Parameters.AddWithValue(NpgsqlDbType.Text, snapshotName);
-        cmd.Parameters.AddWithValue(NpgsqlDbType.Text, snapshot);
+        cmd.Parameters.AddWithValue(NpgsqlDbType.Bytea, snapshot ?? []);
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -289,13 +274,10 @@ public class EventStore : IEventStore
         if (await reader.ReadAsync())
         {
             var snapshotName = reader.GetString(0);
-
-            if (TypeRegistry.Instance.TryResolveType(snapshotName, out var snapshotType) == false || snapshotType == null)
-                throw new InvalidOperationException($"Snapshot '{snapshotName}' is not mapped.");
-
             version = reader.GetInt32(1);
-            var snapshotJson = reader.GetString(2);
-            snapshot = JsonSerializer.Deserialize(snapshotJson, snapshotType);
+            var snapshotData = reader.GetFieldValue<byte[]>(2);
+            
+            snapshot = _snapshotSerializer.Deserialize(snapshotName, snapshotData);
         }
 
         return snapshot == null

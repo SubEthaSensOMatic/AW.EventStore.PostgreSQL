@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace AW.EventStore.PostrgreSQL;
+namespace AW.EventStore.PostgreSQL;
 
 internal class EventId : IEventId
 {

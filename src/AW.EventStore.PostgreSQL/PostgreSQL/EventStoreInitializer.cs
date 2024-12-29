@@ -87,7 +87,7 @@ public class EventStoreInitializer
             CREATE TABLE IF NOT EXISTS {schema}.events (
                 event_id BIGSERIAL NOT NULL,
                 event_type CHARACTER VARYING(128) NOT NULL,
-                event_payload TEXT NOT NULL,
+                event_payload BYTEA NOT NULL,
                 event_created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 event_created_by CHARACTER VARYING(512) NULL,
                 stream_id CHARACTER VARYING(512) NOT NULL,
@@ -119,7 +119,7 @@ public class EventStoreInitializer
                 stream_id CHARACTER VARYING(512) NOT NULL,
                 stream_version INTEGER NOT NULL,
                 snapshot_type CHARACTER VARYING(128) NOT NULL,
-                snapshot TEXT NOT NULL,
+                snapshot BYTEA NOT NULL,
                 CONSTRAINT pk_snapshots PRIMARY KEY (stream_id))
             ");
 
@@ -137,7 +137,7 @@ public class EventStoreInitializer
                 v_stream_type CHARACTER VARYING(128),
                 v_stream_version INTEGER[],
                 v_event_type TEXT[],
-                v_event_payload TEXT[],      
+                v_event_payload BYTEA[],      
                 v_correlation_id CHARACTER VARYING(128),
                 v_causation_id CHARACTER VARYING(128))
             LANGUAGE plpgsql
@@ -170,7 +170,7 @@ public class EventStoreInitializer
 	            v_stream_id CHARACTER VARYING(512),
                 v_stream_version INTEGER[],
                 v_event_type TEXT[],
-                v_event_payload TEXT[],      
+                v_event_payload BYTEA[],      
                 v_correlation_id CHARACTER VARYING(128),
                 v_causation_id CHARACTER VARYING(128))
             LANGUAGE plpgsql
@@ -217,7 +217,7 @@ public class EventStoreInitializer
 	            v_stream_id CHARACTER VARYING(512),
                 v_stream_version INTEGER,
                 v_snapshot_type CHARACTER VARYING(128),
-                v_snapshot TEXT)
+                v_snapshot BYTEA)
             LANGUAGE plpgsql
             AS $$
                 DECLARE v_stream_current_version INTEGER;
