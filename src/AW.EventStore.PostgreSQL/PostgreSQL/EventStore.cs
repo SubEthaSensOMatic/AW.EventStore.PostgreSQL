@@ -125,7 +125,6 @@ public class EventStore : IEventStore
     public async Task<IEnumerable<Event>> LoadStream(string streamId, CancellationToken cancel, int startVersion = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(streamId, nameof(streamId));
-        ArgumentNullException.ThrowIfNull(cancel, nameof(cancel));
         ArgumentOutOfRangeException.ThrowIfNegative(startVersion, nameof(startVersion));
 
         var dataSource = await _dataSourceProvider.GetDataSource();
@@ -176,7 +175,6 @@ public class EventStore : IEventStore
 
     public async Task<IEnumerable<Event>> StreamEvents(IEventId? lastEventId, long maxCount, CancellationToken cancel)
     {
-        ArgumentNullException.ThrowIfNull(cancel, nameof(cancel));
         ArgumentOutOfRangeException.ThrowIfLessThan(maxCount, 1, nameof(maxCount));
 
         var internalId = lastEventId as EventId;

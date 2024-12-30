@@ -61,8 +61,8 @@ internal class EventId : IEventId
     public override string ToString()
         => Convert.ToHexString(GetBytes());
 
-    public byte[] GetBytes() => new byte[]
-    {
+    public byte[] GetBytes() =>
+    [
         (byte)(_value.TxId >> 56),
         (byte)(_value.TxId >> 48),
         (byte)(_value.TxId >> 40),
@@ -79,5 +79,5 @@ internal class EventId : IEventId
         (byte)(_value.Sequence >> 16),
         (byte)(_value.Sequence >> 8),
         (byte)_value.Sequence
-    };
+    ];
 }
